@@ -1,66 +1,104 @@
-import { classifyImage, groupAppImages, groupAplusImages, sortImages } from './catalog.js';
+import { WINDOWS, WINDOW_ORDER, TOLERANCE, EXPORT_QUALITY, EXPORT_FILENAME, GAPS } from './config.js';
+import { groupImages } from './group.js';
+
+// ---------- 状态 ----------
+// 三个独立存储，取代原工具「单一 images 数组 + 按尺寸分桶」。
+const stores = { showcase: [], pcAplus: [], appAplus: [] };
+let selectedShowcaseId = null;
+const carouselSelections = new Map(); // `${variant}:${groupKey}` -> 当前张序号
 
 const elements = {
-  input: document.querySelector('#file-input'),
-  folder: document.querySelector('#folder-input'),
-  dropzone: document.querySelector('#dropzone'),
-  clear: document.querySelector('#clear-button'),
-  count: document.querySelector('#image-count'),
+  download: document.querySelector('#download-button'),
+  clearAll: document.querySelector('#clear-all'),
   thumbs: document.querySelector('#listing-thumbs'),
   hero: document.querySelector('#listing-hero'),
-  kv: document.querySelector('#kv-preview'),
   aplus: document.querySelector('#aplus-groups'),
   mobile: document.querySelector('#mobile-preview'),
-  page: document.querySelector('#listing-page'),
-  download: document.querySelector('#download-button'),
 };
 
-let images = [];
-let selectedId = null;
-const aplusSelections = new Map();
+// ---------- 工具函数 ----------
+function imageNode(item, className = '') {
+  const img = document.createElement('img');
+  img.src = item.url;
+  img.alt = '';
+  img.className = className;
+  img.loading = 'lazy';
+  return img;
+}
 
-function readImage(file) {
+function sizeMismatch(item) {
+  const exp = WINDOWS[item.windowKey].expected;
+  return Math.abs(item.width - exp.w) > TOLERANCE || Math.abs(item.height - exp.h) > TOLERANCE;
+}
+
+function readImage(file, windowKey) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      const meta = classifyImage({ name: file.name, width: image.naturalWidth, height: image.naturalHeight });
-      resolve({ id: `${file.name}-${file.lastModified}`, file, name: file.name, url, width: image.naturalWidth, height: image.naturalHeight, meta });
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
-    image.src = url;
+    const img = new Image();
+    img.onload = () => resolve({
+      id: `${file.name}-${file.lastModified}`,
+      file,
+      name: file.name,
+      url,
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+      windowKey,
+    });
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
   });
 }
 
-function imageNode(item, className = '') {
-  const image = document.createElement('img');
-  image.src = item.url;
-  image.alt = '';
-  image.className = className;
-  image.loading = 'lazy';
-  return image;
+// ---------- 加载 ----------
+async function addFiles(windowKey, fileList) {
+  const incoming = [...fileList].filter((f) => f.type.startsWith('image/'));
+  const loaded = (await Promise.all(incoming.map((f) => readImage(f, windowKey)))).filter(Boolean);
+  const existingIds = new Set(stores[windowKey].map((it) => it.id));
+  const fresh = loaded.filter((it) => !existingIds.has(it.id)); // 去重，避免重复添加
+  stores[windowKey].push(...fresh);
+  render();
 }
 
-function setFrame(frame, item, className = '') {
-  frame.replaceChildren();
-  if (item) frame.append(imageNode(item, className));
-  else frame.innerHTML = '<div class="empty-frame">暂无图片</div>';
+// ---------- 渲染：窗口缩略图 ----------
+function renderWindow(key) {
+  const store = stores[key];
+  const thumbsEl = document.querySelector(`#thumbs-${key}`);
+  const countEl = document.querySelector(`#count-${key}`);
+  const exp = WINDOWS[key].expected;
+
+  countEl.textContent = `${store.length} IMAGES`;
+  thumbsEl.replaceChildren();
+  store.forEach((it) => {
+    const cell = document.createElement('div');
+    cell.className = 'window-thumb';
+    cell.append(imageNode(it));
+    if (sizeMismatch(it)) {
+      const warn = document.createElement('span');
+      warn.className = 'size-warn';
+      warn.textContent = '!';
+      warn.title = `尺寸 ${it.width}×${it.height} 与预期 ${exp.w}×${exp.h} 偏差较大，请确认是否放错窗口`;
+      cell.append(warn);
+    }
+    thumbsEl.append(cell);
+  });
 }
 
-function renderCarousel(group, variant = 'desktop') {
+// ---------- 渲染：无缝模块 / 轮播组（PC / App 通用） ----------
+// 每张图（或轮播组）就是一个 module，模块之间零缝隙竖排拼接。
+// 轮播变体（A+3.1/A+3.2）在同一位置用左右箭头 + 底部圆点浮层切换。
+function renderCarousel(group, variant) {
   const isMobile = variant === 'mobile';
-  const selectionKey = isMobile ? `mobile:${group.key}` : group.key;
-  const current = Math.min(aplusSelections.get(selectionKey) ?? 0, group.slides.length - 1);
-  aplusSelections.set(selectionKey, current);
+  const selKey = `${variant}:${group.key}`;
+  let current = carouselSelections.get(selKey) ?? 0;
+  current = Math.min(current, Math.max(0, group.slides.length - 1));
+  carouselSelections.set(selKey, current);
+
   const block = document.createElement('section');
   block.className = isMobile ? 'mobile-carousel-group' : 'aplus-group';
 
-  const window = document.createElement('div');
-  window.className = isMobile ? 'mobile-carousel-window' : 'carousel-window';
-  window.append(imageNode(group.slides[current], isMobile ? 'mobile-carousel-image' : 'aplus-image'));
+  const windowEl = document.createElement('div');
+  windowEl.className = isMobile ? 'mobile-carousel-window' : 'carousel-window';
+  windowEl.append(imageNode(group.slides[current], isMobile ? 'mobile-carousel-image' : 'aplus-image'));
 
   if (group.slides.length > 1) {
     const previous = document.createElement('button');
@@ -69,88 +107,116 @@ function renderCarousel(group, variant = 'desktop') {
     previous.setAttribute('aria-label', '上一张');
     previous.textContent = '‹';
     previous.addEventListener('click', () => {
-      aplusSelections.set(selectionKey, (current - 1 + group.slides.length) % group.slides.length);
+      carouselSelections.set(selKey, (current - 1 + group.slides.length) % group.slides.length);
       render();
     });
+
     const next = document.createElement('button');
     next.type = 'button';
     next.className = 'carousel-arrow next';
     next.setAttribute('aria-label', '下一张');
     next.textContent = '›';
     next.addEventListener('click', () => {
-      aplusSelections.set(selectionKey, (current + 1) % group.slides.length);
+      carouselSelections.set(selKey, (current + 1) % group.slides.length);
       render();
     });
-    window.append(previous, next);
-  }
 
-  if (group.slides.length > 1) {
+    windowEl.append(previous, next);
+
+    // 圆点浮层叠在图片底部，不占竖向空间，保证拼接无缝
     const dots = document.createElement('div');
-    dots.className = isMobile ? 'mobile-carousel-dots' : 'carousel-dots';
+    dots.className = isMobile ? 'mobile-carousel-dots carousel-dots' : 'carousel-dots';
     group.slides.forEach((slide, index) => {
       const dot = document.createElement('button');
       dot.type = 'button';
       dot.className = `carousel-dot ${index === current ? 'is-active' : ''}`;
       dot.setAttribute('aria-label', `第 ${index + 1} 张`);
       dot.title = slide.name;
-      dot.addEventListener('click', () => {
-        aplusSelections.set(selectionKey, index);
-        render();
-      });
+      dot.addEventListener('click', () => { carouselSelections.set(selKey, index); render(); });
       dots.append(dot);
     });
-    block.append(window, dots);
-  } else {
-    block.append(window);
+    windowEl.append(dots);
   }
+  block.append(windowEl);
   return block;
 }
 
-function renderMobile() {
-  const sorted = sortImages(images);
-  const kv = sorted.find((item) => item.meta.bucket === 'app-kv');
-  const groups = groupAppImages(sorted);
-  elements.mobile.replaceChildren();
-  if (!kv && !groups.length) {
-    elements.mobile.innerHTML = '<div class="mobile-empty">等待 APP 图片</div>';
-    return;
+function setFrame(frame, item, emptyText) {
+  frame.replaceChildren();
+  if (item) frame.append(imageNode(item, 'hero-image'));
+  else frame.innerHTML = `<div class="empty-frame">${emptyText}</div>`;
+}
+
+// ---------- 渲染：预览 ----------
+function renderPreview() {
+  // 橱窗
+  const showcase = stores.showcase;
+  const selected = showcase.find((it) => it.id === selectedShowcaseId) ?? showcase[0];
+  selectedShowcaseId = selected?.id ?? null;
+
+  elements.thumbs.replaceChildren();
+  showcase.forEach((it) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `thumb ${it.id === selectedShowcaseId ? 'is-selected' : ''}`;
+    btn.title = it.name;
+    btn.append(imageNode(it));
+    btn.addEventListener('click', () => { selectedShowcaseId = it.id; render(); });
+    elements.thumbs.append(btn);
+  });
+  setFrame(elements.hero, selected, '等待橱窗图');
+
+  // A+ PC
+  const pcGroups = groupImages(stores.pcAplus);
+  if (!pcGroups.length) {
+    elements.aplus.innerHTML = '<div class="aplus-empty">等待 A+ PC 图片</div>';
+  } else {
+    elements.aplus.replaceChildren(...pcGroups.map((g) => renderCarousel(g, 'desktop')));
   }
-  if (kv) elements.mobile.append(imageNode(kv, 'mobile-kv-image'));
-  groups.forEach((group) => elements.mobile.append(renderCarousel(group, 'mobile')));
+
+  // A+ APP
+  const appGroups = groupImages(stores.appAplus);
+  if (!appGroups.length) {
+    elements.mobile.innerHTML = '<div class="mobile-empty">等待 A+ APP 图片</div>';
+  } else {
+    elements.mobile.replaceChildren(...appGroups.map((g) => renderCarousel(g, 'mobile')));
+  }
 }
 
 function render() {
-  const sorted = sortImages(images);
-  const listing = sorted.filter((item) => item.meta.bucket === 'listing');
-  const kv = sorted.find((item) => item.meta.bucket === 'kv');
-  const aplusGroups = groupAplusImages(sorted);
-  const selected = listing.find((item) => item.id === selectedId) ?? listing[0];
-  selectedId = selected?.id ?? null;
-  elements.count.textContent = String(images.length);
-
-  elements.thumbs.replaceChildren();
-  listing.forEach((item, index) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `thumb ${item.id === selectedId ? 'is-selected' : ''}`;
-    button.title = item.name;
-    button.append(imageNode(item));
-    button.addEventListener('click', () => { selectedId = item.id; render(); });
-    elements.thumbs.append(button);
-    if (index === listing.length - 1) button.setAttribute('aria-current', item.id === selectedId);
-  });
-  setFrame(elements.hero, selected, 'hero-image');
-  setFrame(elements.kv, kv, 'kv-image');
-  elements.aplus.replaceChildren(...aplusGroups.map(renderCarousel));
-  renderMobile();
+  WINDOW_ORDER.forEach(renderWindow);
+  renderPreview();
 }
 
+// ---------- 清空 ----------
+function clearWindow(key) {
+  stores[key].forEach((it) => URL.revokeObjectURL(it.url));
+  stores[key] = [];
+  if (key === 'showcase') selectedShowcaseId = null;
+  render();
+}
+
+function clearAll() {
+  WINDOW_ORDER.forEach((key) => {
+    stores[key].forEach((it) => URL.revokeObjectURL(it.url));
+    stores[key] = [];
+  });
+  selectedShowcaseId = null;
+  carouselSelections.clear();
+  WINDOW_ORDER.forEach((key) => {
+    document.querySelector(`#file-${key}`).value = '';
+    document.querySelector(`#folder-${key}`).value = '';
+  });
+  render();
+}
+
+// ---------- 导出单张拼合 JPG ----------
 function loadExportImage(item) {
   return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = reject;
-    image.src = item.url;
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = item.url;
   });
 }
 
@@ -158,84 +224,84 @@ async function downloadPreview() {
   elements.download.disabled = true;
   elements.download.classList.add('is-loading');
   try {
-    const sorted = sortImages(images);
-    const listing = sorted.filter((item) => item.meta.bucket === 'listing');
-    const kv = sorted.find((item) => item.meta.bucket === 'kv');
-    const aplusGroups = groupAplusImages(sorted);
-    const appKv = sorted.find((item) => item.meta.bucket === 'app-kv');
-    const appGroups = groupAppImages(sorted);
-    if (!listing.length && !kv && !aplusGroups.length && !appKv && !appGroups.length) return;
+    const showcase = stores.showcase;
+    const pcGroups = groupImages(stores.pcAplus);
+    const appGroups = groupImages(stores.appAplus);
+    if (!showcase.length && !pcGroups.length && !appGroups.length) return;
 
-    const showcaseGap = 50;
-    const aplusGap = 20;
-    const appGap = 0;
-    const canvasWidth = 1500;
-    const aplusWidth = Math.max(1464, ...aplusGroups.map((group) => (
-      group.slides.reduce((total, item) => total + item.width, 0) + aplusGap * Math.max(0, group.slides.length - 1)
-    )));
-    const aplusX = canvasWidth + showcaseGap;
-    const showcaseHeight = listing.reduce((total, item) => total + item.height, 0) + showcaseGap * Math.max(0, listing.length - 1);
-    const aplusHeight = (kv?.height ?? 0) + aplusGroups.reduce((total, group) => total + Math.max(...group.slides.map((item) => item.height)), 0);
-    const appWidth = Math.max(1200, ...appGroups.map((group) => (
-      group.slides.reduce((total, item) => total + item.width, 0) + appGap * Math.max(0, group.slides.length - 1)
-    )));
-    const appHeight = (appKv?.height ?? 0)
-      + appGroups.reduce((total, group) => total + Math.max(...group.slides.map((item) => item.height)), 0);
-    const pcHeight = Math.max(showcaseHeight, aplusHeight);
-    const pcAplusEnd = aplusHeight;
-    const appTop = appKv || appGroups.length ? pcAplusEnd + 50 : 0;
+    const allItems = [
+      ...showcase,
+      ...pcGroups.flatMap((g) => g.slides),
+      ...appGroups.flatMap((g) => g.slides),
+    ];
+    const loaded = new Map(await Promise.all(allItems.map(async (it) => [it.id, await loadExportImage(it)])));
+
+    const { showcase: gS, aplus: gA, app: gApp, section: gSec } = GAPS;
+    const showW = 1500;
+
+    // 先算各段高度，避免事后改动 canvas.height 清空画布
+    const showcaseHeight = showcase.reduce((t, it) => t + it.height, 0) + gS * Math.max(0, showcase.length - 1);
+
+    const pcAplusHeight = pcGroups.reduce(
+      (t, g) => t + g.slides.reduce((s, it) => s + it.height, 0) + gA * Math.max(0, g.slides.length - 1),
+      0,
+    );
+    const pcHeight = Math.max(showcaseHeight, pcAplusHeight);
+
+    const appHeight = appGroups.reduce(
+      (t, g) => t + g.slides.reduce((s, it) => s + it.height, 0) + gApp * Math.max(0, g.slides.length - 1),
+      0,
+    );
+    const appTop = appGroups.length ? pcHeight + gSec : 0;
+
+    const aplusWidth = pcGroups.length
+      ? Math.max(...pcGroups.flatMap((g) => g.slides.map((it) => it.width)))
+      : 0;
+    const appWidth = appGroups.length
+      ? Math.max(...appGroups.flatMap((g) => g.slides.map((it) => it.width)))
+      : 0;
+    const aplusX = showW + gS;
+
+    const canvasWidth = Math.max(showW, aplusX + aplusWidth, appWidth);
     const canvasHeight = Math.max(pcHeight, appTop + appHeight);
-    const totalWidth = Math.max(aplusX + aplusWidth, appWidth);
+
     const canvas = document.createElement('canvas');
-    canvas.width = totalWidth;
+    canvas.width = canvasWidth;
     canvas.height = canvasHeight;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const allItems = [...listing, ...(kv ? [kv] : []), ...aplusGroups.flatMap((group) => group.slides), ...(appKv ? [appKv] : []), ...appGroups.flatMap((group) => group.slides)];
-    const loadedImages = new Map(await Promise.all(allItems.map(async (item) => [item.id, await loadExportImage(item)])));
 
-    let showcaseY = 0;
-    listing.forEach((item) => {
-      ctx.drawImage(loadedImages.get(item.id), 0, showcaseY, item.width, item.height);
-      showcaseY += item.height + showcaseGap;
+    // 橱窗列（左）
+    let y = 0;
+    showcase.forEach((it) => {
+      ctx.drawImage(loaded.get(it.id), 0, y, it.width, it.height);
+      y += it.height + gS;
     });
 
-    let aplusY = 0;
-    if (kv) {
-      ctx.drawImage(loadedImages.get(kv.id), aplusX, aplusY, kv.width, kv.height);
-      aplusY += kv.height;
-    }
-    aplusGroups.forEach((group) => {
-      let slideX = aplusX;
-      const rowHeight = Math.max(...group.slides.map((item) => item.height));
-      group.slides.forEach((item) => {
-        ctx.drawImage(loadedImages.get(item.id), slideX, aplusY, item.width, item.height);
-        slideX += item.width + aplusGap;
+    // A+ PC（右列，按编号无缝竖排；同编号多张变体也逐张竖排）
+    let ay = 0;
+    pcGroups.forEach((g) => {
+      g.slides.forEach((it) => {
+        ctx.drawImage(loaded.get(it.id), aplusX, ay, it.width, it.height);
+        ay += it.height + gA;
       });
-      aplusY += rowHeight;
     });
 
-    let appY = appTop;
-    const appX = aplusX;
-    if (appKv) {
-      ctx.drawImage(loadedImages.get(appKv.id), appX, appY, appKv.width, appKv.height);
-      appY += appKv.height;
-    }
-    appGroups.forEach((group) => {
-      let slideX = appX;
-      const rowHeight = Math.max(...group.slides.map((item) => item.height));
-      group.slides.forEach((item) => {
-        ctx.drawImage(loadedImages.get(item.id), slideX, appY, item.width, item.height);
-        slideX += item.width + appGap;
+    // A+ APP（PC 段下方，左对齐，按编号无缝竖排）
+    let by = appTop;
+    appGroups.forEach((g) => {
+      g.slides.forEach((it) => {
+        ctx.drawImage(loaded.get(it.id), 0, by, it.width, it.height);
+        by += it.height + gApp;
       });
-      appY += rowHeight;
     });
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.94));
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', EXPORT_QUALITY));
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'amazon-listing-preview.jpg';
+    link.download = EXPORT_FILENAME;
     link.click();
     URL.revokeObjectURL(url);
   } finally {
@@ -244,36 +310,31 @@ async function downloadPreview() {
   }
 }
 
+// ---------- 事件绑定 ----------
+WINDOW_ORDER.forEach((key) => {
+  const drop = document.querySelector(`[data-drop="${key}"]`);
+  const fileInput = document.querySelector(`#file-${key}`);
+  const folderInput = document.querySelector(`#folder-${key}`);
 
-async function addFiles(fileList) {
-  const incoming = [...fileList].filter((file) => file.type.startsWith('image/'));
-  const loaded = (await Promise.all(incoming.map(readImage))).filter(Boolean);
-  const oldUrls = images.map((item) => item.url);
-  oldUrls.forEach((url) => URL.revokeObjectURL(url));
-  images = loaded;
-  render();
-}
+  fileInput.addEventListener('change', (e) => { addFiles(key, e.target.files); e.target.value = ''; });
+  folderInput.addEventListener('change', (e) => { addFiles(key, e.target.files); e.target.value = ''; });
 
-elements.input.addEventListener('change', (event) => addFiles(event.target.files));
-elements.folder.addEventListener('change', (event) => addFiles(event.target.files));
-elements.dropzone.addEventListener('dragover', (event) => {
-  event.preventDefault();
-  elements.dropzone.classList.add('is-dragging');
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-dragging'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('is-dragging'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('is-dragging');
+    addFiles(key, e.dataTransfer.files);
+  });
+  drop.addEventListener('click', (e) => {
+    if (e.target === drop || e.target.classList.contains('window-hint')) fileInput.click();
+  });
 });
-elements.dropzone.addEventListener('dragleave', () => elements.dropzone.classList.remove('is-dragging'));
-elements.dropzone.addEventListener('drop', (event) => {
-  event.preventDefault();
-  elements.dropzone.classList.remove('is-dragging');
-  addFiles(event.dataTransfer.files);
+
+document.querySelectorAll('[data-clear]').forEach((btn) => {
+  btn.addEventListener('click', () => clearWindow(btn.dataset.clear));
 });
-elements.clear.addEventListener('click', () => {
-  images.forEach((item) => URL.revokeObjectURL(item.url));
-  images = [];
-  selectedId = null;
-  aplusSelections.clear();
-  elements.input.value = '';
-  render();
-});
+elements.clearAll.addEventListener('click', clearAll);
 elements.download.addEventListener('click', downloadPreview);
 
 render();

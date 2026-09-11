@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Listing Studio · Amazon Preview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="workspace">
+      <aside class="control-panel">
+        <div class="brand-lockup"><span class="brand-mark"></span><span>LISTING / STUDIO</span></div>
+        <div class="intro">
+          <p class="eyebrow">LOCAL PREVIEWER / 01</p>
+          <h1>从素材到<br /><em>上架预览。</em></h1>
+          <p class="subcopy">把橱窗图与 A+ 素材放进来，剩下的交给文件名和尺寸。</p>
+        </div>
+
+        <div class="dropzone" id="dropzone">
+          <input id="file-input" type="file" accept="image/*" multiple />
+          <input id="folder-input" type="file" accept="image/*" webkitdirectory directory multiple />
+          <span class="drop-icon">＋</span>
+          <span class="drop-title">拖入图片，或选择素材</span>
+          <span class="drop-actions"><label class="drop-choice" for="file-input">选择图片</label><label class="drop-choice folder-choice" for="folder-input">选择文件夹</label></span>
+          <span class="drop-hint">支持 JPG / PNG / WEBP · 本地处理</span>
+        </div>
+
+        <div class="panel-footer">
+          <div class="file-summary"><span id="image-count">0</span><span> IMAGES LOADED</span></div>
+          <button class="clear-button" id="clear-button" type="button">清空 <span>↗</span></button>
+        </div>
+        <div class="rule-map">
+          <div><span class="rule-dot orange"></span><span>1500 × 1500</span><strong>SHOWCASE</strong></div>
+          <div><span class="rule-dot blue"></span><span>1464 × 1200</span><strong>KV / HERO</strong></div>
+          <div><span class="rule-dot purple"></span><span>1464 × 600</span><strong>A+ CONTENT</strong></div>
+        </div>
+      </aside>
+
+      <section class="preview-stage">
+        <header class="stage-header">
+          <div><span class="status-dot"></span><span>LIVE PREVIEW</span></div>
+          <div class="stage-actions"><span class="stage-meta">AMAZON DETAIL PAGE / DESKTOP</span><button class="download-button" id="download-button" type="button">下载 JPG <span>↓</span></button></div>
+        </header>
+
+        <div class="listing-page" id="listing-page">
+          <div class="listing-topbar"><span class="amazon-word">amazon</span><span class="topbar-search"></span><span class="topbar-icons">⌁　◌　▢</span></div>
+          <div class="product-view">
+            <div class="gallery-column">
+              <div class="thumb-rail" id="listing-thumbs"></div>
+              <div class="hero-frame" id="listing-hero"><div class="empty-frame">等待橱窗图</div></div>
+            </div>
+            <div class="product-ghost">
+              <div class="ghost-line long"></div><div class="ghost-line medium"></div><div class="ghost-line short"></div>
+              <div class="ghost-block"></div><div class="ghost-line medium"></div>
+            </div>
+          </div>
+          <div class="aplus-preview">
+            <div class="section-marker"><span>A+ CONTENT</span><i></i></div>
+            <div class="kv-frame" id="kv-preview"><div class="empty-frame">等待 KV 图片</div></div>
+            <div class="aplus-groups" id="aplus-groups"></div>
+          </div>
+          <section class="mobile-preview-shell">
+            <div class="mobile-preview-heading"><span>APP PREVIEW</span><i></i><small>1200 × 1800 / 1200 × 900</small></div>
+            <div class="mobile-preview" id="mobile-preview"><div class="mobile-empty">等待 APP 图片</div></div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

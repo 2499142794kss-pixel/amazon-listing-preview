@@ -228,8 +228,7 @@ html, body {
 .preview-stage {
   background: #0a0b0e;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
 }
 .stage-header {
   position: sticky;

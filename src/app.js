@@ -1,4 +1,4 @@
-import { WINDOWS, WINDOW_ORDER, TOLERANCE, EXPORT_QUALITY, EXPORT_FILENAME, GAPS } from './config.js';
+import { WINDOWS, WINDOW_ORDER, TOLERANCE, EXPORT_QUALITY, EXPORT_FILENAME, GAPS, EXPORT_MARGIN, SKU_FONT_SIZE, SKU_FONT_WEIGHT, SKU_TEXT_COLOR, SKU_GAP } from './config.js';
 import { groupImages } from './group.js';
 
 // ---------- 状态 ----------
@@ -229,6 +229,11 @@ async function downloadPreview() {
     const appGroups = groupImages(stores.appAplus);
     if (!showcase.length && !pcGroups.length && !appGroups.length) return;
 
+    // 读取左侧 SKU 输入框
+    const skuInput = document.querySelector('#sku-input');
+    const skuValue = skuInput ? skuInput.value.trim() : '';
+    const skuLabel = skuValue ? `SKU：${skuValue}` : '';
+
     const allItems = [
       ...showcase,
       ...pcGroups.flatMap((g) => g.slides),
@@ -237,6 +242,7 @@ async function downloadPreview() {
     const loaded = new Map(await Promise.all(allItems.map(async (it) => [it.id, await loadExportImage(it)])));
 
     const { showcase: gS, aplus: gA, app: gApp, section: gSec } = GAPS;
+    const margin = EXPORT_MARGIN;
     const showW = 1500;
 
     // 先算各段高度，避免事后改动 canvas.height 清空画布
@@ -260,10 +266,22 @@ async function downloadPreview() {
       ? Math.max(...appGroups.flatMap((g) => g.slides.map((it) => it.width)))
       : 0;
     const rightColumnWidth = Math.max(pcWidth, appWidth);
-    const aplusX = showW + gS; // 右列起始 x
 
-    const canvasWidth = Math.max(showW, aplusX + rightColumnWidth);
-    const canvasHeight = Math.max(showcaseHeight, rightColumnHeight);
+    // 顶部 SKU 区：有内容才占高度
+    const skuBlockHeight = skuLabel ? Math.round(SKU_FONT_SIZE * 1.3) : 0;
+    const skuGap = skuLabel ? SKU_GAP : 0;
+
+    // 内容区（橱窗+A+）整体向内缩 margin
+    const contentLeft = margin;
+    const contentTop = margin + skuBlockHeight + skuGap;
+    const aplusX = contentLeft + showW + gS; // 右列起始 x
+
+    const contentWidth = aplusX + rightColumnWidth - contentLeft;
+    const contentHeight = Math.max(showcaseHeight, rightColumnHeight);
+
+    // 画布 = 内容 + 四周 margin
+    const canvasWidth = contentLeft + contentWidth + margin;
+    const canvasHeight = contentTop + contentHeight + margin;
 
     const canvas = document.createElement('canvas');
     canvas.width = canvasWidth;
@@ -272,15 +290,24 @@ async function downloadPreview() {
     ctx.fillStyle = '#777777';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // 顶部 SKU 文字：粗体、指定字号、左对齐贴左边距
+    if (skuLabel) {
+      ctx.fillStyle = SKU_TEXT_COLOR;
+      ctx.font = `${SKU_FONT_WEIGHT} ${SKU_FONT_SIZE}px "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", Arial, sans-serif`;
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      ctx.fillText(skuLabel, contentLeft, margin);
+    }
+
     // 橱窗列（左）
-    let y = 0;
+    let y = contentTop;
     showcase.forEach((it) => {
-      ctx.drawImage(loaded.get(it.id), 0, y, it.width, it.height);
+      ctx.drawImage(loaded.get(it.id), contentLeft, y, it.width, it.height);
       y += it.height + gS;
     });
 
     // A+ PC（右列上部分，按编号无缝竖排；同编号多张变体也逐张竖排）
-    let ay = 0;
+    let ay = contentTop;
     pcGroups.forEach((g) => {
       g.slides.forEach((it) => {
         ctx.drawImage(loaded.get(it.id), aplusX, ay, it.width, it.height);
@@ -289,7 +316,7 @@ async function downloadPreview() {
     });
 
     // A+ APP（右列下部分，紧接 PC 之后，按编号无缝竖排）
-    let by = pcColumnHeight + (appGroups.length ? gSec : 0);
+    let by = contentTop + pcColumnHeight + (appGroups.length ? gSec : 0);
     appGroups.forEach((g) => {
       g.slides.forEach((it) => {
         ctx.drawImage(loaded.get(it.id), aplusX, by, it.width, it.height);

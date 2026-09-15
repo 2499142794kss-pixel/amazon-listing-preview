@@ -39,3 +39,12 @@ export const GAPS = {
   app: 0, // A+APP 各模块/变体之间无缝
   section: 50, // PC 段与 App 段之间的留白
 };
+
+// 导出 JPG 四周留白（像素）
+export const EXPORT_MARGIN = 100;
+
+// 导出图顶部 SKU 文字样式
+export const SKU_FONT_SIZE = 200; // 字号
+export const SKU_FONT_WEIGHT = 700; // 粗体
+export const SKU_TEXT_COLOR = '#111111'; // 文字颜色（叠在灰底 #777777 上）
+export const SKU_GAP = 100; // SKU 与下方内容之间的间距

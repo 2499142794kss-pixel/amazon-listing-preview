@@ -242,34 +242,34 @@ async function downloadPreview() {
     // 先算各段高度，避免事后改动 canvas.height 清空画布
     const showcaseHeight = showcase.reduce((t, it) => t + it.height, 0) + gS * Math.max(0, showcase.length - 1);
 
-    const pcAplusHeight = pcGroups.reduce(
+    const pcColumnHeight = pcGroups.reduce(
       (t, g) => t + g.slides.reduce((s, it) => s + it.height, 0) + gA * Math.max(0, g.slides.length - 1),
       0,
     );
-    const pcHeight = Math.max(showcaseHeight, pcAplusHeight);
-
-    const appHeight = appGroups.reduce(
+    const appColumnHeight = appGroups.reduce(
       (t, g) => t + g.slides.reduce((s, it) => s + it.height, 0) + gApp * Math.max(0, g.slides.length - 1),
       0,
     );
-    const appTop = appGroups.length ? pcHeight + gSec : 0;
+    // 右列 = A+PC 段 + 段间距 + A+APP 段（橱窗图在左列，互不影响）
+    const rightColumnHeight = pcColumnHeight + (appGroups.length ? gSec : 0) + appColumnHeight;
 
-    const aplusWidth = pcGroups.length
+    const pcWidth = pcGroups.length
       ? Math.max(...pcGroups.flatMap((g) => g.slides.map((it) => it.width)))
       : 0;
     const appWidth = appGroups.length
       ? Math.max(...appGroups.flatMap((g) => g.slides.map((it) => it.width)))
       : 0;
-    const aplusX = showW + gS;
+    const rightColumnWidth = Math.max(pcWidth, appWidth);
+    const aplusX = showW + gS; // 右列起始 x
 
-    const canvasWidth = Math.max(showW, aplusX + aplusWidth, appWidth);
-    const canvasHeight = Math.max(pcHeight, appTop + appHeight);
+    const canvasWidth = Math.max(showW, aplusX + rightColumnWidth);
+    const canvasHeight = Math.max(showcaseHeight, rightColumnHeight);
 
     const canvas = document.createElement('canvas');
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#777777';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // 橱窗列（左）
@@ -279,7 +279,7 @@ async function downloadPreview() {
       y += it.height + gS;
     });
 
-    // A+ PC（右列，按编号无缝竖排；同编号多张变体也逐张竖排）
+    // A+ PC（右列上部分，按编号无缝竖排；同编号多张变体也逐张竖排）
     let ay = 0;
     pcGroups.forEach((g) => {
       g.slides.forEach((it) => {
@@ -288,11 +288,11 @@ async function downloadPreview() {
       });
     });
 
-    // A+ APP（PC 段下方，左对齐，按编号无缝竖排）
-    let by = appTop;
+    // A+ APP（右列下部分，紧接 PC 之后，按编号无缝竖排）
+    let by = pcColumnHeight + (appGroups.length ? gSec : 0);
     appGroups.forEach((g) => {
       g.slides.forEach((it) => {
-        ctx.drawImage(loaded.get(it.id), 0, by, it.width, it.height);
+        ctx.drawImage(loaded.get(it.id), aplusX, by, it.width, it.height);
         by += it.height + gApp;
       });
     });
